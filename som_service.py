@@ -40,7 +40,7 @@ def generate_palette_with_minisom(
     width, height = img.size
     
     # Downsample large images for fast & memory-efficient SOM training while maintaining color fidelity
-    max_dim = 400
+    max_dim = 300
     if max(width, height) > max_dim:
         scale = max_dim / float(max(width, height))
         new_size = (int(width * scale), int(height * scale))
@@ -48,6 +48,15 @@ def generate_palette_with_minisom(
 
     img_data = np.array(img) / 255.0
     pixels = img_data.reshape(-1, 3)
+
+    # Subsample pixels for lightning-fast training & metric calculations (< 0.5s response time on free servers)
+    max_samples = 2500
+    if len(pixels) > max_samples:
+        np.random.seed(random_seed)
+        sample_indices = np.random.choice(len(pixels), size=max_samples, replace=False)
+        sample_pixels = pixels[sample_indices]
+    else:
+        sample_pixels = pixels
 
     # 2. SOM Initialization
     som = MiniSom(
@@ -59,10 +68,10 @@ def generate_palette_with_minisom(
         neighborhood_function='gaussian', 
         random_seed=random_seed
     )
-    som.random_weights_init(pixels)
+    som.random_weights_init(sample_pixels)
 
     # 3. Stateful Training Loop with Exponential Decay
-    logs: List[str] = [f"Starting incremental training on {len(pixels)} pixel vectors (Grid: {grid_x}x{grid_y}, max {max_epochs} epochs)..."]
+    logs: List[str] = [f"Starting incremental training on {len(sample_pixels)} sample pixel vectors (Grid: {grid_x}x{grid_y}, max {max_epochs} epochs)..."]
     epoch_metrics: List[Dict[str, Any]] = []
 
     prev_qe = None
@@ -79,16 +88,16 @@ def generate_palette_with_minisom(
         som.learning_rate = initial_lr * np.exp(-t / T)
         som.sigma = initial_sigma * np.exp(-t / T)
 
-        # Train for one full pass over the dataset
-        som.train_random(pixels, len(pixels), verbose=False)
+        # Train for one pass over sample dataset
+        som.train_random(sample_pixels, len(sample_pixels), verbose=False)
 
         # Capture w_i(t)
         current_weights = som.get_weights().reshape(-1, 3)
 
-        # Compute convergence metrics
+        # Compute convergence metrics on sample vectors
         weight_delta = float(np.mean(np.linalg.norm(current_weights - old_weights, axis=1)))
-        q_error = float(som.quantization_error(pixels))
-        t_error = float(som.topographic_error(pixels))
+        q_error = float(som.quantization_error(sample_pixels))
+        t_error = float(som.topographic_error(sample_pixels))
 
         metric_record = {
             "epoch": epoch + 1,
@@ -129,10 +138,10 @@ def generate_palette_with_minisom(
     rgb_weights = np.clip(final_weights * 255, 0, 255).astype(int)
 
     # Compute winning neuron frequency to determine dominant color percentages
-    winner_coordinates = [som.winner(p) for p in pixels]
+    winner_coordinates = [som.winner(p) for p in sample_pixels]
     winner_indices = [x * grid_y + y for (x, y) in winner_coordinates]
     counts = np.bincount(winner_indices, minlength=grid_x * grid_y)
-    total_pixels = len(pixels)
+    total_pixels = len(sample_pixels)
 
     palette = []
     for idx, rgb in enumerate(rgb_weights):
