@@ -17,9 +17,9 @@ Extract high-fidelity color palettes and topological vector quantization metrics
 
 ### Features
 * **Unsupervised Clustering**: Uses 2D Self-Organizing Map topology to sample continuous RGB color spaces.
+* **Full-Resolution Unique Pixel Deduplication**: Trains on all distinct pixel values without artificial downsampling or sample limits.
 * **Stateful Training & Convergence**: Exponential learning rate and neighborhood radius decay with quantization & topographic error tracking.
 * **Access Control & Permissions**: IP Address, Origin Domain, and API Key authorization rules.
-* **Dominant Color Analysis**: Returns RGB arrays, Hex strings, pixel weights, and training metrics per epoch.
 """,
     version="1.0.0",
     docs_url="/docs",
@@ -71,10 +71,11 @@ async def extract_palette(
     tolerance: float = Form(0.02, ge=0.0001, le=0.5, description="Convergence ΔW tolerance threshold"),
     patience_limit: int = Form(3, ge=1, le=20, description="Epoch patience limit for quantization error stabilization"),
     initial_lr: float = Form(0.1, ge=0.01, le=1.0, description="Initial learning rate (α₀)"),
-    initial_sigma: float = Form(1.5, ge=0.1, le=5.0, description="Initial neighborhood radius (σ₀)")
+    initial_sigma: float = Form(1.5, ge=0.1, le=5.0, description="Initial neighborhood radius (σ₀)"),
+    min_color_distance: float = Form(0.0, ge=0.0, le=150.0, description="Optional minimum Euclidean distance threshold (in RGB space 0-255) to merge similar colors (0.0 to disable)")
 ):
     """
-    **Extracts a structured color palette from an uploaded image using MiniSom.**
+    **Extracts a color palette from an uploaded image using MiniSom.**
     
     Requires access permissions (valid Client IP, whitelisted Origin header, or `X-API-Key` header if security rules are enabled).
     """
@@ -98,7 +99,8 @@ async def extract_palette(
             tolerance=tolerance,
             patience_limit=patience_limit,
             initial_lr=initial_lr,
-            initial_sigma=initial_sigma
+            initial_sigma=initial_sigma,
+            min_color_distance=min_color_distance
         )
 
         return JSONResponse(status_code=status.HTTP_200_OK, content=result)

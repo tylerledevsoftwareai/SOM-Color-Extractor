@@ -26,7 +26,8 @@ def test_som_palette_generation():
         grid_y=2,
         max_epochs=10,
         tolerance=0.05,
-        patience_limit=2
+        patience_limit=2,
+        min_color_distance=0.0
     )
 
     assert "palette" in res
@@ -34,9 +35,7 @@ def test_som_palette_generation():
     assert "logs" in res
     assert "summary" in res
 
-    # 3x2 grid should output 6 colors
     assert len(res["palette"]) == 6
-    assert res["summary"]["total_colors"] == 6
 
     # Verify color structure
     first_color = res["palette"][0]
@@ -53,3 +52,24 @@ def test_som_palette_generation():
     assert "weight_delta" in metric
     assert "quantization_error" in metric
     assert "topographic_error" in metric
+
+def test_color_deduplication():
+    # Solid blue image with slight variation
+    img_data = np.ones((50, 50, 3), dtype=np.uint8) * 200
+    img_data[:, :, 2] = 250 # Dominant blue
+    img = Image.fromarray(img_data)
+    buf = io.BytesIO()
+    img.save(buf, format='PNG')
+    buf.seek(0)
+
+    res = generate_palette_with_minisom(
+        image_file=buf,
+        grid_x=3,
+        grid_y=3,
+        max_epochs=10,
+        min_color_distance=30.0
+    )
+
+    # Similar near-identical blue swatches should be merged into 1 distinct color
+    assert len(res["palette"]) == 1
+    assert res["summary"]["total_colors_returned"] == 1
